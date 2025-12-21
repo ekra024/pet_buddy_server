@@ -29,7 +29,8 @@ async function run() {
 
     const db = client.db('petBuddyDB');
     const usersCollection = db.collection('users');
-    const petsCollection = db.collection('pets')
+    const petsCollection = db.collection('pets');
+    const campaignsCollection = db.collection('campaign');
 
     app.post('/users', async(req, res) => {
       const email = req.body.email;
@@ -74,12 +75,50 @@ async function run() {
       
     })
 
-    app.get('/pets', async(req, res) => {
-      const email = req.body;
+    app.get('/pets/available', async(req, res) => {
       try{
-        const result = await petsCollection.find()
+        const result = await petsCollection.find({status: 'available'}).toArray();const availablePets = await petsCollection.find({adoption: false}).sort({created_at: -1}).toArray();
+        res.status(200).json(availablePets);
+
+      }catch(err) {
+        res.status(500).json({ error:
+          "Internal Server Error"          
+        })
+      }
+    })
+
+    
+
+    app.get('/pets/:email', async(req, res) => {
+      const email = req.params.email;
+      console.log(email);
+      try{
+        const result = await petsCollection.find({email: email}).toArray();
+        console.log(result);
+        res.send(result);
       }catch(err) {
         res.status(404).json({error: "Data is not Found"})
+      }
+    })
+
+    app.post('/campaigns', async(req, res) => {
+      try{
+        const camp = req.body;
+        const result = await campaignsCollection.insertOne(camp);
+        res.send(result);
+      }catch(err){
+        res.status(500).json({error:"Internal Server Error"})
+      }
+    })
+
+    app.get('/campaigns/:email', async(req, res) => {
+      const email = req.params.email;
+      try{
+        const result = await campaignsCollection.find({userEmail: email}).toArray();
+        console.log(result);
+        res.send(result);
+      }catch(err){
+        res.status(404).json({error: 'Data Not found'})
       }
     })
 
