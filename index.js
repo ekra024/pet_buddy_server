@@ -77,8 +77,24 @@ async function run() {
 
     app.get('/pets/available', async(req, res) => {
       try{
-        const result = await petsCollection.find({status: 'available'}).toArray();const availablePets = await petsCollection.find({adoption: false}).sort({created_at: -1}).toArray();
-        res.status(200).json(availablePets);
+        const page = parseInt(req.query.page)||1;
+        const limit = parseInt(req.query.limit)||6;
+        const skip = (page -1)*limit;
+
+        const {search="", category=""} = req.query;
+
+        const query ={
+          adoption: false,
+          petName:{$regex: search, $options: "i"}
+        }
+
+        if(category) {
+          query["category.value"] = category;
+        }
+        
+        const pets = await petsCollection.find(query).skip(skip).limit(limit).sort({created_at: -1}).toArray();
+
+        res.send({pets, nextPage:pets.length === limit ? page+1: null});
 
       }catch(err) {
         res.status(500).json({ error:
