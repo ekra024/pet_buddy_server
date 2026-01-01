@@ -123,7 +123,7 @@ async function run() {
       }
     });
 
-    app.get("/pets/:email", async (req, res) => {
+    app.get("/pets/user/:email", async (req, res) => {
       const email = req.params.email;
       console.log(email);
       try {
@@ -162,8 +162,47 @@ async function run() {
       }
     });
 
-    app.get("/campaigns/:email", async (req, res) => {
+    app.get('/campaigns/available',async(req, res) => {
+      try{
+        const result = await campaignsCollection.find().sort({date:-1}).toArray();
+
+        res.send(result);
+
+      }catch(err){
+        res.status(404).json({message:"Data is not Found"})
+      }
+    })
+
+    app.get('/campaigns/:id', async(req, res) =>{
+      try{
+        const id = req.params.id;
+        const result = await campaignsCollection.findOne({_id: new ObjectId(id) });
+        res.send(result);
+      }catch(err) {
+        res.status(500).send({message:"Internal Server Error"})
+      }
+    })
+
+    app.put('/campaigns/:id', async(req, res) => {
+      try{
+        const id = req.params.id;
+        const updatedData = req.body;
+
+        const result = await campaignsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updatedData }
+        );
+
+        res.send(result);
+      } catch (err) {
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    })
+
+    app.get("/campaigns/user/:email", async (req, res) => {
+      console.log('hit here');
       const email = req.params.email;
+      console.log(email);
       try {
         const result = await campaignsCollection
           .find({ userEmail: email })
