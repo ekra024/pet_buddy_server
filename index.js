@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 dotenv.config();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -30,7 +31,8 @@ async function run() {
     const usersCollection = db.collection("users");
     const petsCollection = db.collection("pets");
     const campaignsCollection = db.collection("campaign");
-    const adoptionCollection = db.collection("adoptionPets")
+    const adoptionCollection = db.collection("adoptionPets");
+    const donationsCollection = db.collection('donations');
 
     app.post("/users", async (req, res) => {
       const email = req.body.email;
@@ -155,6 +157,7 @@ async function run() {
     app.post("/campaigns", async (req, res) => {
       try {
         const camp = req.body;
+        
         const result = await campaignsCollection.insertOne(camp);
         res.send(result);
       } catch (err) {
@@ -213,6 +216,94 @@ async function run() {
         res.status(404).json({ error: "Data Not found" });
       }
     });
+
+    app.delete('/campaigns/:id', async(req, res) => {
+      try{
+        const id = req.params.id; 
+        const result = await campaignsCollection.deleteOne({_id: new ObjectId(id)});
+        res.send(result);
+      }catch(err){
+        res.status(500).send({message:"Internal Server Error"})
+      }
+    })
+
+    app.patch('/campaigns/donate/:id', async(req, res) => {
+      try{
+        const id = req.params.id;
+        const { amount} = req.body;
+        const result = await campaignsCollection.updateOne(
+          {_id: new ObjectId(id)},
+          {$inc: {donatedAmount: amount}}
+        );
+        res.send(result);
+      }catch(err){
+        res.status(500).send({message:"Internal Server Error"});      
+      }
+    })
+
+    app.post('/donations',async (req, res) => {
+      const donation = {
+        ...req.body,
+        createdAt : new Date(),
+      };
+      const donationAmount = Number(donation.amount);
+      if(isNaN(donationAmount) || donationAmount <= 0) {
+        return res.status(400).send({message: 'Invalid donation amount'});
+      }
+      const result = await donationsCollection.insertOne(donation);
+      
+      const updateResult = await campaignsCollection.updateOne(
+        {_id: new ObjectId(donation.campaignId)},
+        {$inc: {donatedAmount: donationAmount}}
+      )
+      
+      if(updateResult.modifiedCount === 0) {
+        return res.status(404).send({message:'Campaign not found'});
+      }
+      res.send(result);
+      
+    })
+
+    app.patch('/campaigns/pause/:id',async(req, res) => {
+      try{
+        const id = req.params.id;
+        const {paused} = req.body;
+        const result = await campaignsCollection.updateOne(
+          {_id: new ObjectId(id)},
+          {$set: {paused: paused}}
+        );
+        res.send(result);
+      }catch(err){
+        res.status(500).send({message:"Internal Server Error"});
+        
+      }
+    })
+
+    app.get('/donations/user/:email',async(req, res) => {
+      try{
+        const email = req.params.email;
+        const result = await donationsCollection.find({donatedAmount: {$gt:0}, donorEmail: email}).toArray();
+        res.send(result);
+      }catch(err){
+        res.status(500).send({message:"Internal Server Error"});
+      }
+    })
+    
+
+    app.post('/create-payment-intent',async(req, res) => {
+      const {amount} = req.body;
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount * 100,
+        currency: 'usd',
+        payment_method_types: ['card'],
+      });
+
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+
+    })
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
