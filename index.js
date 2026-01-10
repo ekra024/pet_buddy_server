@@ -77,6 +77,22 @@ async function run() {
       }
     });
 
+    app.put('/pets/:id', async(req, res) => {
+      try{
+        const id = req.params.id;
+        const updatedPet = req.body;
+        console.log(id);
+        const result = await petsCollection.updateOne(
+          {_id: new ObjectId(id)},
+          {$set: updatedPet}
+        );
+        console.log(result);
+        res.send(result);
+      }catch(err){
+        res.status(500).json({error: "Internal Server Error"});
+      }
+    })
+
     app.get("/pets/available", async (req, res) => {
       try {
         const page = parseInt(req.query.page) || 1;
@@ -107,6 +123,23 @@ async function run() {
       }
     });
 
+    app.patch('/pets/adopt/:id', async(req, res) => {
+      console.log('hit here adopt');
+      try{
+        const id = req.params.id;
+      
+        console.log(id);
+
+        const result = await petsCollection.updateOne(
+          {_id: new ObjectId(id)},
+          {$set: {adoption: true}},
+        )
+        res.send(result);
+      }catch(err) {
+        res.status(500).json({error: "Internal Server Error"});
+      }
+    })
+
     app.get("/pets/:id", async (req, res) => {
       try {
         const id = req.params.id;
@@ -118,7 +151,7 @@ async function run() {
           return res.status(404).json({ message: "Pet not found" });
         }
         
-        console.log(pet);
+        
         res.send(pet);
       } catch (err) {
         res.status(500).json({ message: "Server error" });
@@ -127,10 +160,10 @@ async function run() {
 
     app.get("/pets/user/:email", async (req, res) => {
       const email = req.params.email;
-      console.log(email);
+     
       try {
         const result = await petsCollection.find({ email: email }).toArray();
-        console.log(result);
+       
         res.send(result);
       } catch (err) {
         res.status(404).json({ error: "Data is not Found" });
@@ -150,6 +183,35 @@ async function run() {
 
       }catch(err){
         res.status(500).json({error: "Failed to submit adoption request"});
+      }
+    })
+
+    app.patch('/pet/adoptions/:id',async(req, res) => {
+      try{
+        const id = req.params.id;
+        const {status} = req.body;
+        const result = await adoptionCollection.updateOne(
+          {_id: new ObjectId(id)},
+          {$set: {status: status}}
+        );
+        res.send(result);
+      }catch(err) {
+        res.status(500).json({error: "Internal Server Error"});
+      }
+    })
+
+    app.get('/pet/adoptions/user/:email',async(req, res) => {
+      try{
+        const email = req.params.email;
+        console.log(email);
+        
+        const result = await adoptionCollection.find({
+          ownerEmail: email
+        }).toArray();
+        
+        res.send(result);
+      }catch(err){
+        res.status(500).json({error: "Internal Server Error"});
       }
     })
 
@@ -203,14 +265,14 @@ async function run() {
     })
 
     app.get("/campaigns/user/:email", async (req, res) => {
-      console.log('hit here');
+      
       const email = req.params.email;
-      console.log(email);
+   
       try {
         const result = await campaignsCollection
           .find({ userEmail: email })
           .toArray();
-        console.log(result);
+        
         res.send(result);
       } catch (err) {
         res.status(404).json({ error: "Data Not found" });
@@ -264,6 +326,17 @@ async function run() {
       
     })
 
+    app.get('/donations/campaign/:id',async(req, res) => {
+      try{
+        const campaignId = req.params.id;
+        const result = await donationsCollection.find({campaignId: campaignId}).toArray();
+        console.log(result);
+        res.send(result);
+      }catch(err){
+        res.status(500).send({message:"Internal Server Error"});
+      }
+    })
+
     app.patch('/campaigns/pause/:id',async(req, res) => {
       try{
         const id = req.params.id;
@@ -275,14 +348,14 @@ async function run() {
         res.send(result);
       }catch(err){
         res.status(500).send({message:"Internal Server Error"});
-        
+
       }
     })
 
     app.get('/donations/user/:email',async(req, res) => {
       try{
         const email = req.params.email;
-        const result = await donationsCollection.find({donatedAmount: {$gt:0}, donorEmail: email}).toArray();
+        const result = await donationsCollection.find({donorEmail: email}).toArray();
         res.send(result);
       }catch(err){
         res.status(500).send({message:"Internal Server Error"});
