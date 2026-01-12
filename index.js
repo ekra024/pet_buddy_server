@@ -4,7 +4,8 @@ const dotenv = require("dotenv");
 dotenv.config();
 const admin = require("firebase-admin");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-const serviceAccount = require("./firebase-admin-key.json");
+const decodedKey = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+const serviceAccount = JSON.parse(decodedKey);
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -18,14 +19,18 @@ admin.initializeApp({
 
 const verifyUser = async (req, res, next) => {
   try {
+   
     const authHeader = req.headers.authorization;
+   
     if (!authHeader) {
       return res.status(401).send({ message: "Unauthorized" });
     }
+    
     const token = authHeader.split(" ")[1];
 
     const decodedUser = await admin.auth().verifyIdToken(token);
     req.decoded = decodedUser;
+   
     next();
   } catch (error) {
     return res.status(401).send({ message: "Invalid token" });
@@ -59,11 +64,12 @@ async function run() {
     const donationsCollection = db.collection("donations");
 
     const verifyAdmin = async (req, res, next) => {
+      
       const email = req.decoded.email;
-
+      console.log(email);
       const user = await usersCollection.findOne({ email });
       
-
+      console.log(user, user.role);
       if (!user || user.role != "admin") {
         return res.status(403).send({ message: "Forbidden access" });
       }
@@ -73,10 +79,15 @@ async function run() {
 
     app.post("/users", async (req, res) => {
       const email = req.body.email;
+      const date = new Date();
       const userExists = await usersCollection.findOne({ email });
       if (userExists) {
+         await usersCollection.updateOne(
+        { email }, 
+        { $set: { last_log_in: date } } 
+      );
+
         return res
-          .updateOne({})
           .status(200)
           .send({ message: "User already exists", inserted: false });
       }
@@ -85,6 +96,23 @@ async function run() {
       const result = await usersCollection.insertOne(user);
       res.send(result);
     });
+
+    app.get('/allUsers/admin/:email', verifyUser, verifyAdmin, async(req, res) => {
+      const email = req.params.email;
+      if(email !== req.decoded.email) {
+        return res.status(403).send({
+          message:"Unauthorized"
+        })
+      }
+      try{
+        const result = await usersCollection.find().toArray();
+        res.send(result);
+      }catch (error) {
+        res.status(500).send({ message: "Failed to update status" });
+      }
+    })
+
+    
 
     app.patch("/users", async (req, res) => {
       const { email } = req.body;
@@ -193,6 +221,7 @@ async function run() {
     app.get("/pets/user/:email", verifyUser, async (req, res) => {
       const email = req.params.email;
       const userEmail = req.decoded.email;
+      console.log(email, userEmail);
       if (email != userEmail) {
         res.status(403).json({ message: "Unauthorized Access" });
       }
@@ -316,6 +345,7 @@ async function run() {
     app.get("/campaigns/user/:email", verifyUser, async (req, res) => {
       const email = req.params.email;
       const userEmail = req.decoded.email;
+      
       if (email != userEmail) {
         res.status(403).json({ message: "Unauthorized Access" });
       }
@@ -435,35 +465,25 @@ async function run() {
       });
     });
 
-    app.get(
-      "/all-donations/admin/:email",
-      verifyUser,
-      verifyAdmin,
-      async (req, res) => {
-        const email = req.params.email;
-        if (email !== req.decoded.email) {
-          return res.status(403).send({ admin: false });
-        }
-        try {
-          const result = await donationsCollection.find().toArray();
-          res.send(result);
-        } catch (err) {
-          res.status(500).json({ message: "Internal Server Error" });
-        }
+    app.patch("/allUsers/admin/:id",verifyUser, verifyAdmin, async(req, res) => {
+      const id = req.params.id;
+      try{
+        const result = await usersCollection.updateOne(
+          {_id: new ObjectId(id)},
+          {$set:{role:"admin"}},
+        );
+        res.send(result);
       }
-    );
+      catch(err){
+          res.status(500).json({message:"Internal Server Error"})
+        }
+    })
 
     app.get(
       "/users/admin/:email",
       verifyUser,
-      verifyAdmin,
       async (req, res) => {
         const email = req.params.email;
-        
-        if (email !== req.decoded.email) {
-          return res.status(403).send({ admin: false });
-        }
-
         const user = await usersCollection.findOne({ email });
         res.send({ admin: user?.role === "admin" });
       }
@@ -474,6 +494,7 @@ async function run() {
       verifyUser,
       verifyAdmin,
       async (req, res) => {
+        console.log('what is pets')
         const email = req.params.email;
         if (email != req.decoded.email) {
           res.status(403).json({message:"unauthorized acess"})
@@ -486,6 +507,8 @@ async function run() {
         }
       }
     );
+
+
 
     app.get(
       "/allCampaigns/admin/:email",
@@ -504,23 +527,7 @@ async function run() {
         }
       }
     );
-    app.get(
-      "/allDonations/admin/:email",
-      verifyUser,
-      verifyAdmin,
-      async (req, res) => {
-        const email = req.params.email;
-        if (email != req.decoded.email) {
-          res.status(403).json({message:"unauthorized acess"})
-        }
-        try{
-          const result = await donationsCollection.find().toArray();
-          res.send(result);
-        }catch(err){
-          res.status(500).json({message:"Internal Server Error"})
-        }
-      }
-    );
+
 
     app.patch('/admin/campaigns/:id/status', async(req, res) => {
       try{
