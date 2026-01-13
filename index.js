@@ -1,10 +1,11 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const dotenv = require("dotenv");
-dotenv.config();
 const admin = require("firebase-admin");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-const decodedKey = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+const decodedKey = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
+  "utf8"
+);
 const serviceAccount = JSON.parse(decodedKey);
 
 const app = express();
@@ -19,25 +20,22 @@ admin.initializeApp({
 
 const verifyUser = async (req, res, next) => {
   try {
-   
     const authHeader = req.headers.authorization;
-   
+
     if (!authHeader) {
       return res.status(401).send({ message: "Unauthorized" });
     }
-    
+
     const token = authHeader.split(" ")[1];
 
     const decodedUser = await admin.auth().verifyIdToken(token);
     req.decoded = decodedUser;
-   
+
     next();
   } catch (error) {
     return res.status(401).send({ message: "Invalid token" });
   }
 };
-
-
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ps6f07s.mongodb.net/?appName=Cluster0`;
@@ -54,7 +52,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    //await client.connect();
 
     const db = client.db("petBuddyDB");
     const usersCollection = db.collection("users");
@@ -64,28 +62,28 @@ async function run() {
     const donationsCollection = db.collection("donations");
 
     const verifyAdmin = async (req, res, next) => {
-      
+      if (!req.decoded?.email) {
+        return res.status(401).send({ message: "Unauthorized" });
+      }
+
       const email = req.decoded.email;
-      console.log(email);
       const user = await usersCollection.findOne({ email });
-      
-      console.log(user, user.role);
+
       if (!user || user.role != "admin") {
         return res.status(403).send({ message: "Forbidden access" });
       }
       next();
     };
-    module.exports = verifyAdmin;
 
     app.post("/users", async (req, res) => {
       const email = req.body.email;
       const date = new Date();
       const userExists = await usersCollection.findOne({ email });
       if (userExists) {
-         await usersCollection.updateOne(
-        { email }, 
-        { $set: { last_log_in: date } } 
-      );
+        await usersCollection.updateOne(
+          { email },
+          { $set: { last_log_in: date } }
+        );
 
         return res
           .status(200)
@@ -97,22 +95,25 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/allUsers/admin/:email', verifyUser, verifyAdmin, async(req, res) => {
-      const email = req.params.email;
-      if(email !== req.decoded.email) {
-        return res.status(403).send({
-          message:"Unauthorized"
-        })
+    app.get(
+      "/allUsers/admin/:email",
+      verifyUser,
+      verifyAdmin,
+      async (req, res) => {
+        const email = req.params.email;
+        if (email !== req.decoded.email) {
+          return res.status(403).send({
+            message: "Unauthorized",
+          });
+        }
+        try {
+          const result = await usersCollection.find().toArray();
+          res.send(result);
+        } catch (error) {
+          res.status(500).send({ message: "Failed to update status" });
+        }
       }
-      try{
-        const result = await usersCollection.find().toArray();
-        res.send(result);
-      }catch (error) {
-        res.status(500).send({ message: "Failed to update status" });
-      }
-    })
-
-    
+    );
 
     app.patch("/users", async (req, res) => {
       const { email } = req.body;
@@ -147,12 +148,12 @@ async function run() {
       try {
         const id = req.params.id;
         const updatedPet = req.body;
-        
+
         const result = await petsCollection.updateOne(
           { _id: new ObjectId(id) },
           { $set: updatedPet }
         );
-       
+
         res.send(result);
       } catch (err) {
         res.status(500).json({ error: "Internal Server Error" });
@@ -221,7 +222,7 @@ async function run() {
     app.get("/pets/user/:email", verifyUser, async (req, res) => {
       const email = req.params.email;
       const userEmail = req.decoded.email;
-      console.log(email, userEmail);
+
       if (email != userEmail) {
         res.status(403).json({ message: "Unauthorized Access" });
       }
@@ -345,7 +346,7 @@ async function run() {
     app.get("/campaigns/user/:email", verifyUser, async (req, res) => {
       const email = req.params.email;
       const userEmail = req.decoded.email;
-      
+
       if (email != userEmail) {
         res.status(403).json({ message: "Unauthorized Access" });
       }
@@ -353,7 +354,7 @@ async function run() {
         const result = await campaignsCollection
           .find({ userEmail: email })
           .toArray();
-        
+
         res.send(result);
       } catch (err) {
         res.status(404).json({ error: "Data Not found" });
@@ -414,7 +415,7 @@ async function run() {
         const result = await donationsCollection
           .find({ campaignId: campaignId })
           .toArray();
-        
+
         res.send(result);
       } catch (err) {
         res.status(500).send({ message: "Internal Server Error" });
@@ -465,50 +466,171 @@ async function run() {
       });
     });
 
-    app.patch("/allUsers/admin/:id",verifyUser, verifyAdmin, async(req, res) => {
-      const id = req.params.id;
-      try{
-        const result = await usersCollection.updateOne(
-          {_id: new ObjectId(id)},
-          {$set:{role:"admin"}},
-        );
-        res.send(result);
+    app.get("/dashboard/user/summary/:email", verifyUser, async (req, res) => {
+      const email = req.params.email;
+
+      if (email !== req.decoded.email) {
+        return res.status(403).json({ message: "Unauthorized access" });
       }
-      catch(err){
-          res.status(500).json({message:"Internal Server Error"})
-        }
-    })
+
+      try {
+        const totalPets = await petsCollection.countDocuments({
+          email: email,
+        });
+
+        const adoptedPets = await petsCollection.countDocuments({
+          requesterEmail: email,
+          status: "accepted",
+        });
+
+        const campaigns = await campaignsCollection.countDocuments({
+          userEmail: email,
+        });
+
+        const donations = await donationsCollection
+          .find({ donorEmail: email })
+          .toArray();
+
+        const totalDonationAmount = donations.reduce(
+          (sum, d) => sum + Number(d.amount||0),
+          0
+        );
+
+        const recentPets = await petsCollection
+          .find({ ownerEmail: email })
+          .sort({ created_at: -1 })
+          .limit(5)
+          .toArray();
+
+        const recentDonations = await donationsCollection
+          .find({ donorEmail: email })
+          .sort({ createdAt: -1 })
+          .limit(5)
+          .toArray();
+
+        res.send({
+          stats: {
+            totalPets,
+            adoptedPets,
+            campaigns,
+            totalDonationAmount,
+          },
+          recentPets,
+          recentDonations,
+        });
+      } catch (err) {
+        res.status(500).json({ message: "Internal Server Error" });
+      }
+    });
 
     app.get(
-      "/users/admin/:email",
-      verifyUser,
-      async (req, res) => {
-        const email = req.params.email;
-        const user = await usersCollection.findOne({ email });
-        res.send({ admin: user?.role === "admin" });
+  "/dashboard/admin/summary",
+  verifyUser,
+  verifyAdmin,
+  async (req, res) => {
+    try {
+      const totalUsers = await usersCollection.countDocuments();
+
+      const totalPets = await petsCollection.countDocuments();
+
+      const adoptedPets = await petsCollection.countDocuments({
+        adopted: true,
+      });
+
+      const totalCampaigns = await campaignsCollection.countDocuments();
+
+      const activeCampaigns = await campaignsCollection.countDocuments({
+        paused: false,
+      });
+
+      const pausedCampaigns = await campaignsCollection.countDocuments({
+        paused: true,
+      });
+
+      const donations = await donationsCollection.find().toArray();
+
+      const totalDonationAmount = donations.reduce(
+        (sum, d) => sum + Number(d.amount || 0),
+        0
+      );
+
+      const recentPets = await petsCollection
+        .find()
+        .sort({ created_at: -1 })
+        .limit(5)
+        .toArray();
+
+      const recentCampaigns = await campaignsCollection
+        .find()
+        .sort({ date: -1 })
+        .limit(5)
+        .toArray();
+
+      const recentDonations = await donationsCollection
+        .find()
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .toArray();
+
+      res.send({
+        stats: {
+          totalUsers,
+          totalPets,
+          adoptedPets,
+          totalCampaigns,
+          activeCampaigns,
+          pausedCampaigns,
+          totalDonationAmount,
+        },
+        recentPets,
+        recentCampaigns,
+        recentDonations,
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  }
+);
+
+
+    app.patch("/allUsers/admin/:id", async (req, res) => {
+      const id = req.params.id;
+      try {
+        const result = await usersCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { role: "admin" } }
+        );
+        res.send(result);
+      } catch (err) {
+        res.status(500).json({ message: "Internal Server Error" });
       }
-    );
+    });
+
+    app.get("/users/admin/:email", verifyUser, async (req, res) => {
+      const email = req.params.email;
+
+      const user = await usersCollection.findOne({ email });
+      res.send({ admin: user?.role === "admin" });
+    });
 
     app.get(
       "/allPets/admin/:email",
       verifyUser,
       verifyAdmin,
       async (req, res) => {
-        console.log('what is pets')
         const email = req.params.email;
         if (email != req.decoded.email) {
-          res.status(403).json({message:"unauthorized acess"})
+          res.status(403).json({ message: "unauthorized acess" });
         }
-        try{
+        try {
           const result = await petsCollection.find().toArray();
           res.send(result);
-        }catch(err){
-          res.status(500).json({message:"Internal Server Error"})
+        } catch (err) {
+          res.status(500).json({ message: "Internal Server Error" });
         }
       }
     );
-
-
 
     app.get(
       "/allCampaigns/admin/:email",
@@ -517,37 +639,37 @@ async function run() {
       async (req, res) => {
         const email = req.params.email;
         if (email != req.decoded.email) {
-          res.status(403).json({message:"unauthorized acess"})
+          res.status(403).json({ message: "unauthorized acess" });
         }
-        try{
+        try {
           const result = await campaignsCollection.find().toArray();
           res.send(result);
-        }catch(err){
-          res.status(500).json({message:"Internal Server Error"})
+        } catch (err) {
+          res.status(500).json({ message: "Internal Server Error" });
         }
       }
     );
 
-
-    app.patch('/admin/campaigns/:id/status', async(req, res) => {
-      try{
-        console.log('hit admin camp')
+    app.patch("/admin/campaigns/:id/status", async (req, res) => {
+      try {
         const id = req.params.id;
         const result = await campaignsCollection.updateOne(
-          {_id: new Object(id)},
-          {$set:{
-            paused: false,
-          }}
-        )
-        console.log(result);
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              paused: false,
+            },
+          }
+        );
+
         res.send(result);
-      }catch(err){
-         res.status(500).json({message:"Internal Server Error"})
+      } catch (err) {
+        res.status(500).json({ message: "Internal Server Error" });
       }
-    })
+    });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    //await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
